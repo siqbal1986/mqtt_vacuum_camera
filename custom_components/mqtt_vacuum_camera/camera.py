@@ -28,10 +28,15 @@ from .const import (
     ATTR_VACUUM_TOPIC,
     CAMERA_SCAN_INTERVAL_S,
     CAMERA_STORAGE,
+    COLOR_MOVE,
+    DEFAULT_VALUES,
     CONF_VACUUM_IDENTIFIERS,
     DOMAIN,
     FRAME_INTERVAL_S,
     LOGGER,
+    PATH_COLOR_MOP,
+    PATH_COLOR_VACUUM,
+    PATH_COLOR_VACUUM_MOP,
     RENDER_TIMEOUT_S,
     CameraModes,
 )
@@ -147,6 +152,14 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         self.settings.event_listener = self.context.hass.bus.async_listen(
             "event_vacuum_start", self.handle_vacuum_start
         )
+        self.settings.reset_listener = self.context.hass.bus.async_listen(
+            f"event_{DOMAIN}_reset_trims", self.handle_reset_trims
+        )
+
+        self._path_mode: str | None = None
+        self._default_move_color = self.context.shared.device_info.get(
+            COLOR_MOVE, DEFAULT_VALUES["color_move"]
+        )
 
     def _init_paths_config(self) -> CameraPathsConfig:
         """Initialize camera paths configuration."""
@@ -181,6 +194,7 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             hass=self.context.hass,
             shared=self.context.shared,
             file_name=self.context.file_name,
+            storage_path=self.paths.storage_path,
             download_image_func=processor.download_image,
             open_image_func=processor.async_open_image,
             pil_to_bytes_func=self._run_async_pil_to_bytes,
@@ -211,6 +225,8 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         # Clean up coordinator's own dispatchers
         if self.settings.event_listener:
             self.settings.event_listener()
+        if self.settings.reset_listener:
+            self.settings.reset_listener()
         # Clean up ObstacleView manager
         if hasattr(self, "processors"):
             await self.processors.obstacle_view.async_cleanup()
@@ -378,7 +394,36 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             self.context.shared.vacuum_state = (
                 await self.mqtt.connector.get_vacuum_status()
             )
+
+        operation_mode = await self.mqtt.connector.get_operation_mode()
+        await self._update_path_color(operation_mode)
         return self.context.shared.vacuum_state
+
+    async def _update_path_color(self, operation_mode: Optional[str]) -> None:
+        """Update path color based on the current operation mode."""
+        mode = (operation_mode or "").lower()
+        if "vacuum" in mode and "mop" in mode:
+            path_mode = "vacuum_mop"
+            path_color = PATH_COLOR_VACUUM_MOP
+        elif "mop" in mode:
+            path_mode = "mop"
+            path_color = PATH_COLOR_MOP
+        else:
+            path_mode = "vacuum"
+            path_color = self._default_move_color
+
+        if path_mode == self._path_mode:
+            return
+
+        self._path_mode = path_mode
+        self.context.shared.device_info[COLOR_MOVE] = path_color
+        self.processors.colours.set_initial_colours(self.context.shared.device_info)
+        LOGGER.debug(
+            "%s: Updated path color for mode %s to %s",
+            self.context.file_name,
+            path_mode,
+            path_color,
+        )
 
     async def async_update(self):
         """Camera Frame Update."""
@@ -497,4 +542,20 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
     async def handle_vacuum_start(self, event):
         """Handle the event_vacuum_start event."""
         if event.data:
-            self.context.shared.reset_trims()  # requires valetudo_map_parser >0.1.9b41
+            LOGGER.debug(
+                "%s: Vacuum start detected; retaining current map/path data",
+                self.context.file_name,
+            )
+
+    async def handle_reset_trims(self, event):
+        """Handle the reset trims event and clear map/path data."""
+        if event:
+            self.context.shared.reset_trims()
+            self.context.shared.map_new_path = None
+            self.context.shared.map_old_path = None
+            self.processors.obstacle_view.clear_obstacle_image()
+            await self.processors.obstacle_view.async_clear_cache()
+            LOGGER.debug(
+                "%s: Reset trims requested; cleared map/path state",
+                self.context.file_name,
+            )

@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
+from hashlib import sha1
 import math
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 from homeassistant.core import Event, HomeAssistant
@@ -33,6 +35,7 @@ class ObstacleViewContext:
     hass: HomeAssistant
     shared: CameraShared
     file_name: str
+    storage_path: str
     download_image_func: Callable
     open_image_func: Callable
     pil_to_bytes_func: Callable
@@ -60,10 +63,12 @@ class ObstacleView:
         self.hass = context.hass
         self._shared = context.shared
         self._file_name = context.file_name
+        self._storage_path = Path(context.storage_path)
         self._entity_id: Optional[str] = None
         self._download_image = context.download_image_func
         self._open_image = context.open_image_func
         self._pil_to_bytes = context.pil_to_bytes_func
+        self._obstacle_cache_dir = self._storage_path / "obstacles"
 
         # State management
         self._obstacle_image: Optional[bytes] = None
@@ -90,6 +95,9 @@ class ObstacleView:
             entity_id: Camera entity ID for event filtering
         """
         self._entity_id = entity_id
+        await asyncio.to_thread(
+            self._obstacle_cache_dir.mkdir, parents=True, exist_ok=True
+        )
         self._event_listener = self.hass.bus.async_listen(
             "mqtt_vacuum_camera_obstacle_coordinates",
             self._debounced_obstacle_handler,
@@ -110,6 +118,58 @@ class ObstacleView:
         self._processing = False
 
         LOGGER.debug("%s: ObstacleView manager cleaned up", self._file_name)
+
+    @staticmethod
+    def _obstacle_cache_key(obstacle: dict[str, Any]) -> Optional[str]:
+        """Build a cache key for an obstacle entry."""
+        link = obstacle.get("link")
+        label = obstacle.get("label")
+        if link:
+            return link
+        if label:
+            return str(label)
+        return None
+
+    def _get_cache_path(self, obstacle: dict[str, Any]) -> Optional[Path]:
+        """Return the cache path for an obstacle image."""
+        cache_key = self._obstacle_cache_key(obstacle)
+        if not cache_key:
+            return None
+        digest = sha1(cache_key.encode("utf-8")).hexdigest()
+        return self._obstacle_cache_dir / f"{digest}.jpg"
+
+    async def _load_cached_image(self, obstacle: dict[str, Any]) -> Optional[bytes]:
+        """Load a cached obstacle image if it exists."""
+        cache_path = self._get_cache_path(obstacle)
+        if not cache_path or not cache_path.exists():
+            return None
+        try:
+            return await asyncio.to_thread(cache_path.read_bytes)
+        except OSError as err:
+            LOGGER.warning(
+                "%s: Failed to read cached obstacle image: %s",
+                self._file_name,
+                err,
+                exc_info=True,
+            )
+            return None
+
+    async def _save_cached_image(
+        self, obstacle: dict[str, Any], image_data: bytes
+    ) -> None:
+        """Persist obstacle image bytes to cache."""
+        cache_path = self._get_cache_path(obstacle)
+        if not cache_path:
+            return
+        try:
+            await asyncio.to_thread(cache_path.write_bytes, image_data)
+        except OSError as err:
+            LOGGER.warning(
+                "%s: Failed to cache obstacle image: %s",
+                self._file_name,
+                err,
+                exc_info=True,
+            )
 
     async def _debounced_obstacle_handler(self, event: Event) -> None:
         """Handler that debounces incoming obstacle view events."""
@@ -349,6 +409,11 @@ class ObstacleView:
         Returns:
             The processed obstacle image bytes or None
         """
+        cached_image = await self._load_cached_image(obstacle)
+        if cached_image is not None:
+            LOGGER.debug("%s: Using cached obstacle image", self._file_name)
+            return await self._process_obstacle_image(cached_image, obstacle)
+
         # Download the obstacle image
         await self._set_camera_mode(
             CameraModes.OBSTACLE_DOWNLOAD,
@@ -371,6 +436,8 @@ class ObstacleView:
             LOGGER.debug("%s: No image downloaded", self._file_name)
             await self._set_camera_mode(CameraModes.MAP_VIEW, "No image downloaded")
             return None
+
+        await self._save_cached_image(obstacle, image_data)
 
         # Process the downloaded image
         return await self._process_obstacle_image(image_data, obstacle)
@@ -452,3 +519,23 @@ class ObstacleView:
     def clear_obstacle_image(self) -> None:
         """Clear the current obstacle image."""
         self._obstacle_image = None
+
+    async def async_clear_cache(self) -> None:
+        """Clear cached obstacle images from disk."""
+        if not self._obstacle_cache_dir.exists():
+            return
+
+        def _remove_cached_files() -> None:
+            for file_path in self._obstacle_cache_dir.glob("*.jpg"):
+                try:
+                    file_path.unlink()
+                except OSError as err:
+                    LOGGER.warning(
+                        "%s: Failed to delete cached obstacle image %s: %s",
+                        self._file_name,
+                        file_path,
+                        err,
+                        exc_info=True,
+                    )
+
+        await asyncio.to_thread(_remove_cached_files)

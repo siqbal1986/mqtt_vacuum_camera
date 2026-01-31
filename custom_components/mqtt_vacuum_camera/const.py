@@ -519,6 +519,10 @@ COLOR_ROOM_13 = "color_room_13"
 COLOR_ROOM_14 = "color_room_14"
 COLOR_ROOM_15 = "color_room_15"
 
+PATH_COLOR_VACUUM = [238, 247, 255]
+PATH_COLOR_MOP = [0, 204, 255]
+PATH_COLOR_VACUUM_MOP = [186, 85, 211]
+
 """Alpha for RGBA Colours"""
 ALPHA_CHARGER = "alpha_charger"
 ALPHA_CARPET = "alpha_carpet"
