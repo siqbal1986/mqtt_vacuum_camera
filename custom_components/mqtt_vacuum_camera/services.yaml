@@ -25,6 +25,11 @@ snapshot:
         text:
 
 reset_trims:
+  name: Reset map data
+  description: Clears map trims, path history, and cached obstacle images.
+  target:
+    entity:
+      domain: camera
 
 obstacle_view:
   name: Obstacle view

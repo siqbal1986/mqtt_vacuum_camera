@@ -74,6 +74,8 @@ class ObstacleView:
         self._obstacle_image: Optional[bytes] = None
         self._processing: bool = False
         self._latest_obstacle_event: Optional[Event] = None
+        self._prefetch_task: Optional[asyncio.Task] = None
+        self._prefetch_signature: Optional[tuple[str, ...]] = None
 
         # Event listener handles
         self._event_listener = None
@@ -112,6 +114,10 @@ class ObstacleView:
 
         if self._debouncer:
             self._debouncer.async_shutdown()
+
+        if self._prefetch_task and not self._prefetch_task.done():
+            self._prefetch_task.cancel()
+            self._prefetch_task = None
 
         # Clear state
         self._obstacle_image = None
@@ -170,6 +176,49 @@ class ObstacleView:
                 err,
                 exc_info=True,
             )
+
+    async def async_prefetch_obstacles(
+        self, obstacles: list[dict[str, Any]]
+    ) -> None:
+        """Prefetch obstacle images into the cache."""
+        if not obstacles:
+            return
+
+        signature_items = []
+        for obstacle in obstacles:
+            cache_key = self._obstacle_cache_key(obstacle)
+            if cache_key:
+                signature_items.append(cache_key)
+        signature = tuple(sorted(signature_items))
+        if not signature or signature == self._prefetch_signature:
+            return
+
+        if self._prefetch_task and not self._prefetch_task.done():
+            return
+
+        self._prefetch_signature = signature
+        self._prefetch_task = self.hass.async_create_task(
+            self._async_prefetch_obstacles(obstacles)
+        )
+
+    async def _async_prefetch_obstacles(
+        self, obstacles: list[dict[str, Any]]
+    ) -> None:
+        """Download missing obstacle images to the cache."""
+        semaphore = asyncio.Semaphore(3)
+
+        async def _download_if_missing(obstacle: dict[str, Any]) -> None:
+            cache_path = self._get_cache_path(obstacle)
+            if not cache_path or cache_path.exists() or not obstacle.get("link"):
+                return
+            async with semaphore:
+                image_data = await self._download_image(
+                    obstacle["link"], DOWNLOAD_TIMEOUT
+                )
+                if image_data:
+                    await self._save_cached_image(obstacle, image_data)
+
+        await asyncio.gather(*(_download_if_missing(o) for o in obstacles))
 
     async def _debounced_obstacle_handler(self, event: Event) -> None:
         """Handler that debounces incoming obstacle view events."""
@@ -522,6 +571,10 @@ class ObstacleView:
 
     async def async_clear_cache(self) -> None:
         """Clear cached obstacle images from disk."""
+        if self._prefetch_task and not self._prefetch_task.done():
+            self._prefetch_task.cancel()
+            self._prefetch_task = None
+
         if not self._obstacle_cache_dir.exists():
             return
 

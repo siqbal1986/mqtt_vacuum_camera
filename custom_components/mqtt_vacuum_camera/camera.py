@@ -29,6 +29,9 @@ from .const import (
     CAMERA_SCAN_INTERVAL_S,
     CAMERA_STORAGE,
     COLOR_MOVE,
+    COLOR_MOVE_MOP,
+    COLOR_MOVE_VACUUM,
+    COLOR_MOVE_VACUUM_MOP,
     DEFAULT_VALUES,
     CONF_VACUUM_IDENTIFIERS,
     DOMAIN,
@@ -158,7 +161,7 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
 
         self._path_mode: str | None = None
         self._default_move_color = self.context.shared.device_info.get(
-            COLOR_MOVE, DEFAULT_VALUES["color_move"]
+            COLOR_MOVE_VACUUM, DEFAULT_VALUES["color_move_vacuum"]
         )
 
     def _init_paths_config(self) -> CameraPathsConfig:
@@ -404,10 +407,14 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         mode = (operation_mode or "").lower()
         if "vacuum" in mode and "mop" in mode:
             path_mode = "vacuum_mop"
-            path_color = PATH_COLOR_VACUUM_MOP
+            path_color = self.context.shared.device_info.get(
+                COLOR_MOVE_VACUUM_MOP, DEFAULT_VALUES["color_move_vacuum_mop"]
+            )
         elif "mop" in mode:
             path_mode = "mop"
-            path_color = PATH_COLOR_MOP
+            path_color = self.context.shared.device_info.get(
+                COLOR_MOVE_MOP, DEFAULT_VALUES["color_move_mop"]
+            )
         else:
             path_mode = "vacuum"
             path_color = self._default_move_color
@@ -439,6 +446,10 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
             # if the vacuum is working, or it is the first image.
 
             _ = await self._update_vacuum_state()
+            if self.context.shared.obstacles_data:
+                await self.processors.obstacle_view.async_prefetch_obstacles(
+                    self.context.shared.obstacles_data
+                )
             if _ != "docked" or self.is_streaming:
                 self.context.shared.image_grab = True
                 self.context.shared.frame_number = (
@@ -552,7 +563,7 @@ class MQTTCamera(CoordinatorEntity, Camera):  # pylint: disable=too-many-instanc
         if event:
             self.context.shared.reset_trims()
             self.context.shared.map_new_path = None
-            self.context.shared.map_old_path = None
+            self.context.shared.map_old_path = []
             self.processors.obstacle_view.clear_obstacle_image()
             await self.processors.obstacle_view.async_clear_cache()
             LOGGER.debug(

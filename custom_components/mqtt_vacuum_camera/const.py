@@ -198,6 +198,9 @@ DEFAULT_VALUES = {
     "color_charger": [255, 128, 0],
     "color_carpet": [255, 192, 203],
     "color_move": [238, 247, 255],
+    "color_move_vacuum": [238, 247, 255],
+    "color_move_mop": [0, 204, 255],
+    "color_move_vacuum_mop": [186, 85, 211],
     "color_wall": [255, 255, 0],
     "color_robot": [255, 255, 204],
     "color_go_to": [0, 255, 0],
@@ -302,6 +305,9 @@ KEYS_TO_UPDATE = [
     "color_charger",
     "color_carpet",
     "color_move",
+    "color_move_vacuum",
+    "color_move_mop",
+    "color_move_vacuum_mop",
     "color_wall",
     "color_robot",
     "color_go_to",
@@ -489,6 +495,9 @@ IS_OFFSET = "add_offset"
 COLOR_CHARGER = "color_charger"
 COLOR_CARPET = "color_carpet"
 COLOR_MOVE = "color_move"
+COLOR_MOVE_VACUUM = "color_move_vacuum"
+COLOR_MOVE_MOP = "color_move_mop"
+COLOR_MOVE_VACUUM_MOP = "color_move_vacuum_mop"
 COLOR_ROBOT = "color_robot"
 COLOR_NO_GO = "color_no_go"
 COLOR_GO_TO = "color_go_to"

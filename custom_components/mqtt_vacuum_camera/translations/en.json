@@ -228,6 +228,9 @@
         "data": {
           "color_charger": "[255, 128, 0]",
           "color_move": "[238, 247, 255]",
+          "color_move_vacuum": "[238, 247, 255]",
+          "color_move_mop": "[0, 204, 255]",
+          "color_move_vacuum_mop": "[186, 85, 211]",
           "color_wall": "[255, 255, 0]",
           "color_robot": "[255, 255, 204]",
           "color_go_to": "[0, 255, 0]",
@@ -239,6 +242,9 @@
         "data_description": {
           "color_charger": "Charger color.",
           "color_move": "Move color.",
+          "color_move_vacuum": "Vacuum path color.",
+          "color_move_mop": "Mop path color.",
+          "color_move_vacuum_mop": "Vacuum + Mop path color.",
           "color_wall": "Wall color.",
           "color_robot": "Robot color.",
           "color_go_to": "Go-to color.",
