@@ -12,14 +12,19 @@ import concurrent.futures
 from io import BytesIO
 from typing import Any
 
-from PIL import Image
+from PIL import Image, ImageDraw
 import aiohttp
 from aiohttp.abc import HTTPException
 from valetudo_map_parser.config.types import JsonType, PilPNG
 from valetudo_map_parser.hypfer_handler import HypferMapImageHandler
 from valetudo_map_parser.rand256_handler import ReImageHandler
 
-from custom_components.mqtt_vacuum_camera.const import LOGGER, NOT_STREAMING_STATES
+from custom_components.mqtt_vacuum_camera.const import (
+    COLOR_MOVE,
+    DEFAULT_VALUES,
+    LOGGER,
+    NOT_STREAMING_STATES,
+)
 from custom_components.mqtt_vacuum_camera.utils.thread_pool import ThreadPoolManager
 
 LOGGER.propagate = True
@@ -38,6 +43,8 @@ class CameraProcessor:
         self._thread_pool = thread_pool
         self.data = {}
         self._file_name = self._shared.file_name
+        if not isinstance(self._shared.map_old_path, list):
+            self._shared.map_old_path = []
 
     async def async_process_valetudo_data(self, parsed_json: JsonType) -> PilPNG | None:
         """
@@ -55,6 +62,8 @@ class CameraProcessor:
 
             if pil_img is not None:
                 self.data = data
+                self._update_path_history()
+                pil_img = self._overlay_path_history(pil_img)
                 update_vac_state = self._shared.vacuum_state
                 if not self._shared.snapshot_take and (
                     update_vac_state in NOT_STREAMING_STATES
@@ -83,6 +92,8 @@ class CameraProcessor:
             )
             if pil_img is not None:
                 self.data = data
+                self._update_path_history()
+                pil_img = self._overlay_path_history(pil_img)
                 update_vac_state = self._shared.vacuum_state
                 if not self._shared.snapshot_take and (
                     update_vac_state in NOT_STREAMING_STATES
@@ -92,6 +103,43 @@ class CameraProcessor:
                     self._re_handler.update_trims()
             return pil_img
         return None
+
+    def _update_path_history(self) -> None:
+        """Persist new path segments for history rendering."""
+        if not isinstance(self._shared.map_old_path, list):
+            self._shared.map_old_path = []
+
+        current_path = self._shared.map_new_path
+        if not current_path:
+            return
+
+        if not self._shared.map_old_path:
+            self._shared.map_old_path.append(current_path)
+            return
+
+        if current_path != self._shared.map_old_path[-1]:
+            self._shared.map_old_path.append(current_path)
+
+    def _overlay_path_history(self, pil_img: PilPNG) -> PilPNG:
+        """Draw stored path history on top of the current image."""
+        if (
+            not isinstance(self._shared.map_old_path, list)
+            or not self._shared.map_old_path
+        ):
+            return pil_img
+
+        path_color = self._shared.device_info.get(
+            COLOR_MOVE, DEFAULT_VALUES["color_move"]
+        )
+        alpha = DEFAULT_VALUES.get("alpha_move", 255.0)
+        rgba_color = (*path_color, int(alpha))
+
+        drawer = ImageDraw.Draw(pil_img, "RGBA")
+        for path in self._shared.map_old_path:
+            if len(path) < 2:
+                continue
+            drawer.line(path, fill=rgba_color, width=5)
+        return pil_img
 
     def run_process_valetudo_data(self, parsed_json: JsonType):
         """Async function to process the image data from the Vacuum Json data."""

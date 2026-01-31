@@ -54,6 +54,9 @@ from .const import (
     COLOR_MATERIAL_TILE,
     COLOR_MATERIAL_WOOD,
     COLOR_MOVE,
+    COLOR_MOVE_MOP,
+    COLOR_MOVE_VACUUM,
+    COLOR_MOVE_VACUUM_MOP,
     COLOR_NO_GO,
     COLOR_ROBOT,
     COLOR_ROOM_0,
@@ -228,6 +231,18 @@ class MQTTCameraOptionsFlowHandler(OptionsFlow):
                     ): ColorRGBSelector(),
                     vol.Optional(
                         COLOR_MOVE, default=config_entry.options.get("color_move")
+                    ): ColorRGBSelector(),
+                    vol.Optional(
+                        COLOR_MOVE_VACUUM,
+                        default=config_entry.options.get("color_move_vacuum"),
+                    ): ColorRGBSelector(),
+                    vol.Optional(
+                        COLOR_MOVE_MOP,
+                        default=config_entry.options.get("color_move_mop"),
+                    ): ColorRGBSelector(),
+                    vol.Optional(
+                        COLOR_MOVE_VACUUM_MOP,
+                        default=config_entry.options.get("color_move_vacuum_mop"),
                     ): ColorRGBSelector(),
                     vol.Optional(
                         COLOR_GO_TO, default=config_entry.options.get("color_go_to")
@@ -710,6 +725,9 @@ class MQTTCameraOptionsFlowHandler(OptionsFlow):
                 {
                     "color_charger": user_input.get(COLOR_CHARGER),
                     "color_move": user_input.get(COLOR_MOVE),
+                    "color_move_vacuum": user_input.get(COLOR_MOVE_VACUUM),
+                    "color_move_mop": user_input.get(COLOR_MOVE_MOP),
+                    "color_move_vacuum_mop": user_input.get(COLOR_MOVE_VACUUM_MOP),
                     "color_wall": user_input.get(COLOR_WALL),
                     "color_robot": user_input.get(COLOR_ROBOT),
                     "color_go_to": user_input.get(COLOR_GO_TO),
