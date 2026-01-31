@@ -37,6 +37,9 @@ from .const import (
     DOMAIN,
     FRAME_INTERVAL_S,
     LOGGER,
+    PATH_COLOR_MOP,
+    PATH_COLOR_VACUUM,
+    PATH_COLOR_VACUUM_MOP,
     RENDER_TIMEOUT_S,
     CameraModes,
 )
